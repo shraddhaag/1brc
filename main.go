@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"runtime/trace"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +20,9 @@ var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
 
 func main() {
+
+	trace.Start(os.Stderr)
+	defer trace.Stop()
 
 	flag.Parse()
 	if *cpuprofile != "" {
@@ -49,6 +53,7 @@ func main() {
 }
 
 func evaluate() string {
+	// mapOfTemp, err := readFileLineByLineIntoAMap("./test_cases/measurements-rounding.txt")
 	mapOfTemp, err := readFileLineByLineIntoAMap("measurements.txt")
 	if err != nil {
 		panic(err)
@@ -97,29 +102,38 @@ func evaluate() string {
 }
 
 func readFileLineByLineIntoAMap(filepath string) (map[string][]float64, error) {
-	mapOfTemp := make(map[string][]float64)
-
 	file, err := os.Open(filepath)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	scanner := bufio.NewScanner(file)
+	mapOfTemp := make(map[string][]float64)
 
-	for scanner.Scan() {
-		text := scanner.Text()
+	chanOwner := func() <-chan string {
+		resultStream := make(chan string, 100)
+		go func() {
+			defer close(resultStream)
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				text := scanner.Text()
+				resultStream <- text
+			}
+		}()
+		return resultStream
+	}
 
+	resultStream := chanOwner()
+
+	for text := range resultStream {
 		index := strings.Index(text, ";")
 		city := text[:index]
 		temp := convertStringToFloat(text[index+1:])
-
 		if _, ok := mapOfTemp[city]; ok {
 			mapOfTemp[city] = append(mapOfTemp[city], temp)
 		} else {
 			mapOfTemp[city] = []float64{temp}
 		}
 	}
-
 	return mapOfTemp, nil
 }
 
