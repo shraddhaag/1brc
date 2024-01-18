@@ -4,12 +4,8 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"log"
 	"math"
 	"os"
-	"runtime"
-	"runtime/pprof"
-	"runtime/trace"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,35 +17,36 @@ var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
 
 func main() {
 
-	trace.Start(os.Stderr)
-	defer trace.Stop()
+	// trace.Start(os.Stderr)
+	// defer trace.Stop()
 
-	flag.Parse()
-	if *cpuprofile != "" {
-		f, err := os.Create("./profiles/" + *cpuprofile)
-		if err != nil {
-			log.Fatal("could not create CPU profile: ", err)
-		}
-		defer f.Close() // error handling omitted for example
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal("could not start CPU profile: ", err)
-		}
-		defer pprof.StopCPUProfile()
-	}
+	// flag.Parse()
+	// if *cpuprofile != "" {
+	// 	f, err := os.Create("./profiles/" + *cpuprofile)
+	// 	if err != nil {
+	// 		log.Fatal("could not create CPU profile: ", err)
+	// 	}
+	// 	defer f.Close() // error handling omitted for example
+	// 	if err := pprof.StartCPUProfile(f); err != nil {
+	// 		log.Fatal("could not start CPU profile: ", err)
+	// 	}
+	// 	defer pprof.StopCPUProfile()
+	// }
 
-	fmt.Println(evaluate())
+	evaluate()
+	// fmt.Println(evaluate())
 
-	if *memprofile != "" {
-		f, err := os.Create("./profiles/" + *memprofile)
-		if err != nil {
-			log.Fatal("could not create memory profile: ", err)
-		}
-		defer f.Close() // error handling omitted for example
-		runtime.GC()    // get up-to-date statistics
-		if err := pprof.WriteHeapProfile(f); err != nil {
-			log.Fatal("could not write memory profile: ", err)
-		}
-	}
+	// if *memprofile != "" {
+	// 	f, err := os.Create("./profiles/" + *memprofile)
+	// 	if err != nil {
+	// 		log.Fatal("could not create memory profile: ", err)
+	// 	}
+	// 	defer f.Close() // error handling omitted for example
+	// 	runtime.GC()    // get up-to-date statistics
+	// 	if err := pprof.WriteHeapProfile(f); err != nil {
+	// 		log.Fatal("could not write memory profile: ", err)
+	// 	}
+	// }
 }
 
 func evaluate() string {
@@ -109,32 +106,52 @@ func readFileLineByLineIntoAMap(filepath string) (map[string][]float64, error) {
 
 	mapOfTemp := make(map[string][]float64)
 
-	chanOwner := func() <-chan string {
-		resultStream := make(chan string, 100)
+	chanOwner := func() <-chan []string {
+		resultStream := make(chan []string, 100)
+		toSend := make([]string, 100)
 		go func() {
 			defer close(resultStream)
 			scanner := bufio.NewScanner(file)
+			var count int
 			for scanner.Scan() {
-				text := scanner.Text()
-				resultStream <- text
+				if count == 100 {
+					localCopy := make([]string, 100)
+					copy(localCopy, toSend)
+					resultStream <- localCopy
+					count = 0
+				}
+				toSend[count] = scanner.Text()
+				count++
+			}
+			if count != 0 {
+				resultStream <- toSend[:count]
 			}
 		}()
 		return resultStream
 	}
 
 	resultStream := chanOwner()
-
-	for text := range resultStream {
-		index := strings.Index(text, ";")
-		city := text[:index]
-		temp := convertStringToFloat(text[index+1:])
-		if _, ok := mapOfTemp[city]; ok {
-			mapOfTemp[city] = append(mapOfTemp[city], temp)
-		} else {
-			mapOfTemp[city] = []float64{temp}
+	for t := range resultStream {
+		for _, text := range t {
+			index := strings.Index(text, ";")
+			if index == -1 {
+				continue
+			}
+			city := text[:index]
+			temp := convertStringToFloat(text[index+1:])
+			if _, ok := mapOfTemp[city]; ok {
+				mapOfTemp[city] = append(mapOfTemp[city], temp)
+			} else {
+				mapOfTemp[city] = []float64{temp}
+			}
 		}
 	}
 	return mapOfTemp, nil
+}
+
+type cityTemp struct {
+	city string
+	temp float64
 }
 
 func convertStringToFloat(input string) float64 {
