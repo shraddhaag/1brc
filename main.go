@@ -1,11 +1,16 @@
 package main
 
 import (
-	"bufio"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"math"
 	"os"
+	"runtime"
+	"runtime/pprof"
+	"runtime/trace"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,39 +19,47 @@ import (
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
+var executionprofile = flag.String("execprofile", "", "write tarce execution to `file`")
 
 func main() {
 
-	// trace.Start(os.Stderr)
-	// defer trace.Stop()
+	flag.Parse()
 
-	// flag.Parse()
-	// if *cpuprofile != "" {
-	// 	f, err := os.Create("./profiles/" + *cpuprofile)
-	// 	if err != nil {
-	// 		log.Fatal("could not create CPU profile: ", err)
-	// 	}
-	// 	defer f.Close() // error handling omitted for example
-	// 	if err := pprof.StartCPUProfile(f); err != nil {
-	// 		log.Fatal("could not start CPU profile: ", err)
-	// 	}
-	// 	defer pprof.StopCPUProfile()
-	// }
+	if *executionprofile != "" {
+		f, err := os.Create("./profiles/" + *executionprofile)
+		if err != nil {
+			log.Fatal("could not create trace execution profile: ", err)
+		}
+		defer f.Close()
+		trace.Start(f)
+		defer trace.Stop()
+	}
 
-	evaluate()
-	// fmt.Println(evaluate())
+	if *cpuprofile != "" {
+		f, err := os.Create("./profiles/" + *cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
 
-	// if *memprofile != "" {
-	// 	f, err := os.Create("./profiles/" + *memprofile)
-	// 	if err != nil {
-	// 		log.Fatal("could not create memory profile: ", err)
-	// 	}
-	// 	defer f.Close() // error handling omitted for example
-	// 	runtime.GC()    // get up-to-date statistics
-	// 	if err := pprof.WriteHeapProfile(f); err != nil {
-	// 		log.Fatal("could not write memory profile: ", err)
-	// 	}
-	// }
+	fmt.Println(evaluate())
+
+	if *memprofile != "" {
+		f, err := os.Create("./profiles/" + *memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer f.Close()
+		runtime.GC()
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+	}
 }
 
 func evaluate() string {
@@ -109,19 +122,24 @@ func readFileLineByLineIntoAMap(filepath string) (map[string][]float64, error) {
 	chanOwner := func() <-chan []string {
 		resultStream := make(chan []string, 100)
 		toSend := make([]string, 100)
+		//  reading 100MB per request
+		chunkSize := 100 * 1024 * 1024
+		buf := make([]byte, chunkSize)
+		var stringsBuilder strings.Builder
+		stringsBuilder.Grow(500)
+		var count int
 		go func() {
 			defer close(resultStream)
-			scanner := bufio.NewScanner(file)
-			var count int
-			for scanner.Scan() {
-				if count == 100 {
-					localCopy := make([]string, 100)
-					copy(localCopy, toSend)
-					resultStream <- localCopy
-					count = 0
+			for {
+				readTotal, err := file.Read(buf)
+				if err != nil {
+					if errors.Is(err, io.EOF) {
+						count = processReadChunk(buf, readTotal, count, &stringsBuilder, toSend, resultStream)
+						break
+					}
+					panic(err)
 				}
-				toSend[count] = scanner.Text()
-				count++
+				count = processReadChunk(buf, readTotal, count, &stringsBuilder, toSend, resultStream)
 			}
 			if count != 0 {
 				resultStream <- toSend[:count]
@@ -157,4 +175,27 @@ type cityTemp struct {
 func convertStringToFloat(input string) float64 {
 	output, _ := strconv.ParseFloat(input, 64)
 	return output
+}
+
+func processReadChunk(buf []byte, readTotal, count int, stringsBuilder *strings.Builder, toSend []string, resultStream chan<- []string) int {
+	for _, char := range buf[:readTotal] {
+		if char == '\n' {
+			if stringsBuilder.Len() != 0 {
+				toSend[count] = stringsBuilder.String()
+				stringsBuilder.Reset()
+				count++
+
+				if count == 100 {
+					count = 0
+					localCopy := make([]string, 100)
+					copy(localCopy, toSend)
+					resultStream <- localCopy
+				}
+			}
+		} else {
+			stringsBuilder.WriteByte(char)
+		}
+	}
+
+	return count
 }
