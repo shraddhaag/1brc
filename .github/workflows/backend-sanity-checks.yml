@@ -1,0 +1,64 @@
+name: backend-sanity-checks
+on:
+  push:
+    paths:
+      - "**.go"
+      - ".github/workflows/backend-sanity-checks.yml"
+
+jobs:
+  go-vet:
+    name: Go Vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.20.x"
+      - name: Run go vet
+        run: go vet ./... > govetresult.json
+      - name: Upload Go test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: go-vet-results
+          path: govetresult.json
+  go-fmt:
+    name: Go fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.20.x"
+      - name: Run go fmt
+        id: run-go-fmt
+        run: |
+          go fmt ./... >> gofmtresult.json
+          # [ -s <filename> ] returns true is file exists and size is greater than zero
+          echo "gofmt_needed=$(if [ -s gofmtresult.json ];then echo "true"; else echo "false"; fi)" >> $GITHUB_OUTPUT
+      - name: Check if any files need to be formatted with go fmt
+        if: steps.run-go-fmt.outputs.gofmt_needed == 'true'
+        run: |
+          echo "go fmt needs to be run on the following files:"
+          cat gofmtresult.json
+          exit 1
+  go-test:
+    name: Go Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.20.x"
+      - name: Install dependencies
+        run: |
+          go install gotest.tools/gotestsum@latest
+      - name: Run Tests
+        run: gotestsum --format testname --jsonfile testresult.json -- -v ./...
+      - name: Upload Go test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: go-test-results
+          path: testresult.json
