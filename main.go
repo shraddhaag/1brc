@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,15 +12,17 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	"slices"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
 var executionprofile = flag.String("execprofile", "", "write tarce execution to `file`")
+var input = flag.String("input", "", "path to the input file to evaluate")
 
 func main() {
 
@@ -47,7 +50,7 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	fmt.Println(evaluate())
+	fmt.Println(evaluate(*input))
 
 	if *memprofile != "" {
 		f, err := os.Create("./profiles/" + *memprofile)
@@ -62,22 +65,28 @@ func main() {
 	}
 }
 
-func evaluate() string {
+type result struct {
+	city string
+	temp string
+}
+
+func evaluate(input string) string {
 	// mapOfTemp, err := readFileLineByLineIntoAMap("./test_cases/measurements-rounding.txt")
-	mapOfTemp, err := readFileLineByLineIntoAMap("measurements.txt")
+	// mapOfTemp, err := readFileLineByLineIntoAMap("measurements.txt")
+	mapOfTemp, err := readFileLineByLineIntoAMap(input)
 	if err != nil {
 		panic(err)
 	}
 
-	var result []string
+	var resultArr []result
 	var wg sync.WaitGroup
 	var mx sync.Mutex
 
-	updateResult := func(input string) {
+	updateResult := func(city, temp string) {
 		mx.Lock()
 		defer mx.Unlock()
 
-		result = append(result, input)
+		resultArr = append(resultArr, result{city, temp})
 	}
 
 	for city, temps := range mapOfTemp {
@@ -85,7 +94,7 @@ func evaluate() string {
 		go func(city string, temps []float64) {
 			defer wg.Done()
 			var min, max, avg float64
-			min, max = math.MaxFloat64, 0
+			min, max = math.MaxFloat64, math.MinInt64
 
 			for _, temp := range temps {
 				if temp < min {
@@ -101,14 +110,21 @@ func evaluate() string {
 			avg = avg / float64(len(temps))
 			avg = math.Ceil(avg*10) / 10
 
-			updateResult(fmt.Sprintf("%s=%.1f/%.1f/%.1f", city, min, avg, max))
+			updateResult(city, fmt.Sprintf("%.1f/%.1f/%.1f", min, avg, max))
 
 		}(city, temps)
 	}
 
 	wg.Wait()
-	sort.Strings(result)
-	return strings.Join(result, ", ")
+	slices.SortFunc(resultArr, func(i, j result) int {
+		return cmp.Compare(i.city, j.city)
+	})
+
+	var stringsBuilder strings.Builder
+	for _, i := range resultArr {
+		stringsBuilder.WriteString(fmt.Sprintf("%s=%s, ", i.city, i.temp))
+	}
+	return stringsBuilder.String()[:stringsBuilder.Len()-2]
 }
 
 func readFileLineByLineIntoAMap(filepath string) (map[string][]float64, error) {
