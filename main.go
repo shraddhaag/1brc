@@ -91,10 +91,10 @@ func evaluate(input string) string {
 
 	for city, temps := range mapOfTemp {
 		wg.Add(1)
-		go func(city string, temps []float64) {
+		go func(city string, temps []int64) {
 			defer wg.Done()
-			var min, max, avg float64
-			min, max = math.MaxFloat64, math.MinInt64
+			var min, max, avg int64
+			min, max = math.MaxInt64, math.MinInt64
 
 			for _, temp := range temps {
 				if temp < min {
@@ -107,10 +107,7 @@ func evaluate(input string) string {
 				avg += temp
 			}
 
-			avg = avg / float64(len(temps))
-			avg = math.Ceil(avg*10) / 10
-
-			updateResult(city, fmt.Sprintf("%.1f/%.1f/%.1f", min, avg, max))
+			updateResult(city, fmt.Sprintf("%.1f/%.1f/%.1f", round(float64(min)/10.0), round(float64(avg)/10.0/float64(len(temps))), round(float64(max)/10.0)))
 
 		}(city, temps)
 	}
@@ -127,13 +124,13 @@ func evaluate(input string) string {
 	return stringsBuilder.String()[:stringsBuilder.Len()-2]
 }
 
-func readFileLineByLineIntoAMap(filepath string) (map[string][]float64, error) {
+func readFileLineByLineIntoAMap(filepath string) (map[string][]int64, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		panic(err)
 	}
 
-	mapOfTemp := make(map[string][]float64)
+	mapOfTemp := make(map[string][]int64)
 
 	chanOwner := func() <-chan []string {
 		resultStream := make(chan []string, 100)
@@ -172,11 +169,11 @@ func readFileLineByLineIntoAMap(filepath string) (map[string][]float64, error) {
 				continue
 			}
 			city := text[:index]
-			temp := convertStringToFloat(text[index+1:])
+			temp := convertStringToInt64(text[index+1:])
 			if _, ok := mapOfTemp[city]; ok {
 				mapOfTemp[city] = append(mapOfTemp[city], temp)
 			} else {
-				mapOfTemp[city] = []float64{temp}
+				mapOfTemp[city] = []int64{temp}
 			}
 		}
 	}
@@ -188,8 +185,9 @@ type cityTemp struct {
 	temp float64
 }
 
-func convertStringToFloat(input string) float64 {
-	output, _ := strconv.ParseFloat(input, 64)
+func convertStringToInt64(input string) int64 {
+	input = input[:len(input)-2] + input[len(input)-1:]
+	output, _ := strconv.ParseInt(input, 10, 64)
 	return output
 }
 
@@ -214,4 +212,12 @@ func processReadChunk(buf []byte, readTotal, count int, stringsBuilder *strings.
 	}
 
 	return count
+}
+
+func round(x float64) float64 {
+	rounded := math.Round(x * 10)
+	if rounded == -0.0 {
+		return 0.0
+	}
+	return rounded / 10
 }
