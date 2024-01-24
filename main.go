@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,11 +11,9 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"sort"
 	"strconv"
 	"strings"
-	"sync"
-
-	"slices"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -71,66 +68,44 @@ type result struct {
 }
 
 func evaluate(input string) string {
-	// mapOfTemp, err := readFileLineByLineIntoAMap("./test_cases/measurements-rounding.txt")
-	// mapOfTemp, err := readFileLineByLineIntoAMap("measurements.txt")
 	mapOfTemp, err := readFileLineByLineIntoAMap(input)
 	if err != nil {
 		panic(err)
 	}
 
-	var resultArr []result
-	var wg sync.WaitGroup
-	var mx sync.Mutex
-
-	updateResult := func(city, temp string) {
-		mx.Lock()
-		defer mx.Unlock()
-
-		resultArr = append(resultArr, result{city, temp})
+	resultArr := make([]string, len(mapOfTemp))
+	var count int
+	for city, _ := range mapOfTemp {
+		resultArr[count] = city
+		count++
 	}
 
-	for city, temps := range mapOfTemp {
-		wg.Add(1)
-		go func(city string, temps []int64) {
-			defer wg.Done()
-			var min, max, avg int64
-			min, max = math.MaxInt64, math.MinInt64
-
-			for _, temp := range temps {
-				if temp < min {
-					min = temp
-				}
-
-				if temp > max {
-					max = temp
-				}
-				avg += temp
-			}
-
-			updateResult(city, fmt.Sprintf("%.1f/%.1f/%.1f", round(float64(min)/10.0), round(float64(avg)/10.0/float64(len(temps))), round(float64(max)/10.0)))
-
-		}(city, temps)
-	}
-
-	wg.Wait()
-	slices.SortFunc(resultArr, func(i, j result) int {
-		return cmp.Compare(i.city, j.city)
-	})
+	sort.Strings(resultArr)
 
 	var stringsBuilder strings.Builder
 	for _, i := range resultArr {
-		stringsBuilder.WriteString(fmt.Sprintf("%s=%s, ", i.city, i.temp))
+		stringsBuilder.WriteString(fmt.Sprintf("%s=%.1f/%.1f/%.1f, ", i,
+			round(float64(mapOfTemp[i].min)/10.0),
+			round(float64(mapOfTemp[i].sum)/10.0/float64(mapOfTemp[i].count)),
+			round(float64(mapOfTemp[i].max)/10.0)))
 	}
 	return stringsBuilder.String()[:stringsBuilder.Len()-2]
 }
 
-func readFileLineByLineIntoAMap(filepath string) (map[string][]int64, error) {
+type cityTemperatureInfo struct {
+	count int64
+	min   int64
+	max   int64
+	sum   int64
+}
+
+func readFileLineByLineIntoAMap(filepath string) (map[string]cityTemperatureInfo, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		panic(err)
 	}
 
-	mapOfTemp := make(map[string][]int64)
+	mapOfTemp := make(map[string]cityTemperatureInfo)
 
 	chanOwner := func() <-chan []string {
 		resultStream := make(chan []string, 100)
@@ -170,19 +145,29 @@ func readFileLineByLineIntoAMap(filepath string) (map[string][]int64, error) {
 			}
 			city := text[:index]
 			temp := convertStringToInt64(text[index+1:])
-			if _, ok := mapOfTemp[city]; ok {
-				mapOfTemp[city] = append(mapOfTemp[city], temp)
+			if val, ok := mapOfTemp[city]; ok {
+				val.count++
+				val.sum += temp
+				if temp < val.min {
+					val.min = temp
+				}
+
+				if temp > val.max {
+					val.max = temp
+				}
+				mapOfTemp[city] = val
 			} else {
-				mapOfTemp[city] = []int64{temp}
+				mapOfTemp[city] = cityTemperatureInfo{
+					count: 1,
+					min:   temp,
+					max:   temp,
+					sum:   temp,
+				}
 			}
 		}
 	}
+	// fmt.Println(mapOfTemp)
 	return mapOfTemp, nil
-}
-
-type cityTemp struct {
-	city string
-	temp float64
 }
 
 func convertStringToInt64(input string) int64 {
