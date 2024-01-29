@@ -104,7 +104,7 @@ func readFileLineByLineIntoAMap(filepath string) (map[string]cityTemperatureInfo
 	defer file.Close()
 
 	mapOfTemp := make(map[string]cityTemperatureInfo)
-	resultStream := make(chan []string, 100)
+	resultStream := make(chan map[string]cityTemperatureInfo, 10)
 	chunkStream := make(chan []byte, 15)
 	chunkSize := 64 * 1024 * 1024
 	var wg sync.WaitGroup
@@ -155,31 +155,20 @@ func readFileLineByLineIntoAMap(filepath string) (map[string]cityTemperatureInfo
 
 	// process all city temperatures derived after processing the file chunks
 	for t := range resultStream {
-		for _, text := range t {
-			index := strings.Index(text, ";")
-			if index == -1 {
-				continue
-			}
-			city := text[:index]
-			temp := convertStringToInt64(text[index+1:])
+		for city, tempInfo := range t {
 			if val, ok := mapOfTemp[city]; ok {
-				val.count++
-				val.sum += temp
-				if temp < val.min {
-					val.min = temp
+				val.count += tempInfo.count
+				val.sum += tempInfo.sum
+				if tempInfo.min < val.min {
+					val.min = tempInfo.min
 				}
 
-				if temp > val.max {
-					val.max = temp
+				if tempInfo.max > val.max {
+					val.max = tempInfo.max
 				}
 				mapOfTemp[city] = val
 			} else {
-				mapOfTemp[city] = cityTemperatureInfo{
-					count: 1,
-					min:   temp,
-					max:   temp,
-					sum:   temp,
-				}
+				mapOfTemp[city] = tempInfo
 			}
 		}
 	}
@@ -193,32 +182,45 @@ func convertStringToInt64(input string) int64 {
 	return output
 }
 
-func processReadChunk(buf []byte, resultStream chan<- []string) {
-	var count int
+func processReadChunk(buf []byte, resultStream chan<- map[string]cityTemperatureInfo) {
 	var stringsBuilder strings.Builder
-	toSend := make([]string, 100)
+	toSend := make(map[string]cityTemperatureInfo)
+	var city string
 
 	for _, char := range buf {
-		if char == '\n' {
-			if stringsBuilder.Len() != 0 {
-				toSend[count] = stringsBuilder.String()
+		if char == ';' {
+			city = stringsBuilder.String()
+			stringsBuilder.Reset()
+		} else if char == '\n' {
+			if stringsBuilder.Len() != 0 && len(city) != 0 {
+				temp := convertStringToInt64(stringsBuilder.String())
 				stringsBuilder.Reset()
-				count++
 
-				if count == 100 {
-					count = 0
-					localCopy := make([]string, 100)
-					copy(localCopy, toSend)
-					resultStream <- localCopy
+				if val, ok := toSend[city]; ok {
+					val.count++
+					val.sum += temp
+					if temp < val.min {
+						val.min = temp
+					}
+
+					if temp > val.max {
+						val.max = temp
+					}
+					toSend[city] = val
+				} else {
+					toSend[city] = cityTemperatureInfo{
+						count: 1,
+						min:   temp,
+						max:   temp,
+						sum:   temp,
+					}
 				}
 			}
 		} else {
 			stringsBuilder.WriteByte(char)
 		}
 	}
-	if count != 0 {
-		resultStream <- toSend[:count]
-	}
+	resultStream <- toSend
 }
 
 func round(x float64) float64 {
