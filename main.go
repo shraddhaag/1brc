@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -47,7 +49,7 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	fmt.Println(evaluate(*input))
+	evaluate(*input)
 
 	if *memprofile != "" {
 		f, err := os.Create("./profiles/" + *memprofile)
@@ -60,11 +62,6 @@ func main() {
 			log.Fatal("could not write memory profile: ", err)
 		}
 	}
-}
-
-type result struct {
-	city string
-	temp string
 }
 
 func evaluate(input string) string {
@@ -104,39 +101,59 @@ func readFileLineByLineIntoAMap(filepath string) (map[string]cityTemperatureInfo
 	if err != nil {
 		panic(err)
 	}
+	defer file.Close()
 
 	mapOfTemp := make(map[string]cityTemperatureInfo)
+	resultStream := make(chan []string, 100)
+	chunkStream := make(chan []byte, 15)
+	chunkSize := 64 * 1024 * 1024
+	var wg sync.WaitGroup
 
-	chanOwner := func() <-chan []string {
-		resultStream := make(chan []string, 100)
-		toSend := make([]string, 100)
-		//  reading 100MB per request
-		chunkSize := 100 * 1024 * 1024
-		buf := make([]byte, chunkSize)
-		var stringsBuilder strings.Builder
-		stringsBuilder.Grow(500)
-		var count int
+	// spawn workers to consume (process) file chunks read
+	for i := 0; i < runtime.NumCPU()-1; i++ {
+		wg.Add(1)
 		go func() {
-			defer close(resultStream)
-			for {
-				readTotal, err := file.Read(buf)
-				if err != nil {
-					if errors.Is(err, io.EOF) {
-						count = processReadChunk(buf, readTotal, count, &stringsBuilder, toSend, resultStream)
-						break
-					}
-					panic(err)
-				}
-				count = processReadChunk(buf, readTotal, count, &stringsBuilder, toSend, resultStream)
+			for chunk := range chunkStream {
+				processReadChunk(chunk, resultStream)
 			}
-			if count != 0 {
-				resultStream <- toSend[:count]
-			}
+			wg.Done()
 		}()
-		return resultStream
 	}
 
-	resultStream := chanOwner()
+	// spawn a goroutine to read file in chunks and send it to the chunk channel for further processing
+	go func() {
+		buf := make([]byte, chunkSize)
+		leftover := make([]byte, 0, chunkSize)
+		for {
+			readTotal, err := file.Read(buf)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				panic(err)
+			}
+			buf = buf[:readTotal]
+
+			toSend := make([]byte, readTotal)
+			copy(toSend, buf)
+
+			lastNewLineIndex := bytes.LastIndex(buf, []byte{'\n'})
+
+			toSend = append(leftover, buf[:lastNewLineIndex+1]...)
+			leftover = make([]byte, len(buf[lastNewLineIndex+1:]))
+			copy(leftover, buf[lastNewLineIndex+1:])
+
+			chunkStream <- toSend
+
+		}
+		close(chunkStream)
+
+		// wait for all chunks to be proccessed before closing the result stream
+		wg.Wait()
+		close(resultStream)
+	}()
+
+	// process all city temperatures derived after processing the file chunks
 	for t := range resultStream {
 		for _, text := range t {
 			index := strings.Index(text, ";")
@@ -166,7 +183,7 @@ func readFileLineByLineIntoAMap(filepath string) (map[string]cityTemperatureInfo
 			}
 		}
 	}
-	// fmt.Println(mapOfTemp)
+
 	return mapOfTemp, nil
 }
 
@@ -176,8 +193,12 @@ func convertStringToInt64(input string) int64 {
 	return output
 }
 
-func processReadChunk(buf []byte, readTotal, count int, stringsBuilder *strings.Builder, toSend []string, resultStream chan<- []string) int {
-	for _, char := range buf[:readTotal] {
+func processReadChunk(buf []byte, resultStream chan<- []string) {
+	var count int
+	var stringsBuilder strings.Builder
+	toSend := make([]string, 100)
+
+	for _, char := range buf {
 		if char == '\n' {
 			if stringsBuilder.Len() != 0 {
 				toSend[count] = stringsBuilder.String()
@@ -195,8 +216,9 @@ func processReadChunk(buf []byte, readTotal, count int, stringsBuilder *strings.
 			stringsBuilder.WriteByte(char)
 		}
 	}
-
-	return count
+	if count != 0 {
+		resultStream <- toSend[:count]
+	}
 }
 
 func round(x float64) float64 {
