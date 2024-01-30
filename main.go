@@ -177,19 +177,20 @@ func readFileLineByLineIntoAMap(filepath string) (map[string]cityTemperatureInfo
 }
 
 func processReadChunk(buf []byte, resultStream chan<- map[string]cityTemperatureInfo) {
-	var stringsBuilder strings.Builder
 	toSend := make(map[string]cityTemperatureInfo)
-	var city string
+	var start int
+	var city, tempString string
 
-	for _, char := range buf {
+	stringBuf := string(buf)
+	for index, char := range stringBuf {
 		switch char {
 		case ';':
-			city = stringsBuilder.String()
-			stringsBuilder.Reset()
+			city = stringBuf[start:index]
+			start = index + 1
 		case '\n':
-			if stringsBuilder.Len() != 0 && len(city) != 0 {
-				temp, _ := strconv.ParseInt(stringsBuilder.String(), 10, 64)
-				stringsBuilder.Reset()
+			if (index-start) > 1 && len(city) != 0 {
+				temp, _ := strconv.ParseInt(tempString+string(stringBuf[index-1]), 10, 64)
+				start = index + 1
 
 				if val, ok := toSend[city]; ok {
 					val.count++
@@ -214,11 +215,9 @@ func processReadChunk(buf []byte, resultStream chan<- map[string]cityTemperature
 				city = ""
 			}
 		case '.':
-			if len(city) == 0 {
-				stringsBuilder.WriteByte(char)
+			if len(city) != 0 {
+				tempString = stringBuf[start:index]
 			}
-		default:
-			stringsBuilder.WriteByte(char)
 		}
 	}
 	resultStream <- toSend

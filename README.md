@@ -12,4 +12,5 @@
 |7|In the city <> temperatures map, replaced the value for each key (city) to preprocessed min, max, count and sum of all temperatures instead of storing all recorded temperatures for the city.|1:39.81|-71.79|[e5213a8](https://github.com/shraddhaag/1brc/commit/e5213a836b17bec0a858474a11f07c902e724bba)|
 |8|Use producer consumer pattern to read file in chunks and process the chunks in parallel.|1:43.82|+14.01|[067f2a4](https://github.com/shraddhaag/1brc/commit/067f2a44c0d6b3bb7cc073639364f733bce09e3e)|
 |9|Reduce memory allocation by processing each read chunk into a map. Result channel now can collate the smaller processed chunk maps.|0:28.544|-75.286|[d4153ac](https://github.com/shraddhaag/1brc/commit/d4153ac7a841170a5ceee47d930e97738b5a19f6)|
-|10|Avoid string concatenation overhead by not reading the decimal point when processing city temperature.|0:24.571|-3.973||
+|10|Avoid string concatenation overhead by not reading the decimal point when processing city temperature.|0:24.571|-3.973|[90f2fe1](https://github.com/shraddhaag/1brc/commit/90f2fe121f454f3f1b5cdaeaaebe639bb86d4578)|
+|11|Convert byte slice to string directly instead of using a `strings.Builder`.|0:18.910|-5.761||
