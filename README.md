@@ -13,4 +13,5 @@
 |8|Use producer consumer pattern to read file in chunks and process the chunks in parallel.|1:43.82|+14.01|[067f2a4](https://github.com/shraddhaag/1brc/commit/067f2a44c0d6b3bb7cc073639364f733bce09e3e)|
 |9|Reduce memory allocation by processing each read chunk into a map. Result channel now can collate the smaller processed chunk maps.|0:28.544|-75.286|[d4153ac](https://github.com/shraddhaag/1brc/commit/d4153ac7a841170a5ceee47d930e97738b5a19f6)|
 |10|Avoid string concatenation overhead by not reading the decimal point when processing city temperature.|0:24.571|-3.973|[90f2fe1](https://github.com/shraddhaag/1brc/commit/90f2fe121f454f3f1b5cdaeaaebe639bb86d4578)|
-|11|Convert byte slice to string directly instead of using a `strings.Builder`.|0:18.910|-5.761||
+|11|Convert byte slice to string directly instead of using a `strings.Builder`.|0:18.910|-5.761|[88bb6da](https://github.com/shraddhaag/1brc/commit/88bb6da8b85424d46a8c836f3c35a49466df1ea4)|
+|12|Replace `strconv.ParseInt` with a custom `string` to `int` parser.|0:14.008|-4.902||

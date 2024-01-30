@@ -13,7 +13,6 @@ import (
 	"runtime/pprof"
 	"runtime/trace"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -179,7 +178,7 @@ func readFileLineByLineIntoAMap(filepath string) (map[string]cityTemperatureInfo
 func processReadChunk(buf []byte, resultStream chan<- map[string]cityTemperatureInfo) {
 	toSend := make(map[string]cityTemperatureInfo)
 	var start int
-	var city, tempString string
+	var city string
 
 	stringBuf := string(buf)
 	for index, char := range stringBuf {
@@ -189,7 +188,7 @@ func processReadChunk(buf []byte, resultStream chan<- map[string]cityTemperature
 			start = index + 1
 		case '\n':
 			if (index-start) > 1 && len(city) != 0 {
-				temp, _ := strconv.ParseInt(tempString+string(stringBuf[index-1]), 10, 64)
+				temp := customStringToIntParser(stringBuf[start:index])
 				start = index + 1
 
 				if val, ok := toSend[city]; ok {
@@ -214,10 +213,6 @@ func processReadChunk(buf []byte, resultStream chan<- map[string]cityTemperature
 
 				city = ""
 			}
-		case '.':
-			if len(city) != 0 {
-				tempString = stringBuf[start:index]
-			}
 		}
 	}
 	resultStream <- toSend
@@ -229,4 +224,26 @@ func round(x float64) float64 {
 		return 0.0
 	}
 	return rounded / 10
+}
+
+// input: string containing signed number in the range [-99.9, 99.9]
+// output: signed int in the range [-999, 999]
+func customStringToIntParser(input string) (output int64) {
+	var isNegativeNumber bool
+	if input[0] == '-' {
+		isNegativeNumber = true
+		input = input[1:]
+	}
+
+	switch len(input) {
+	case 3:
+		output = int64(input[0])*10 + int64(input[2]) - int64('0')*11
+	case 4:
+		output = int64(input[0])*100 + int64(input[1])*10 + int64(input[3]) - (int64('0') * 111)
+	}
+
+	if isNegativeNumber {
+		return -output
+	}
+	return
 }
