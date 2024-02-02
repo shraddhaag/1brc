@@ -14,4 +14,5 @@
 |9|Reduce memory allocation by processing each read chunk into a map. Result channel now can collate the smaller processed chunk maps.|0:28.544|-75.286|[d4153ac](https://github.com/shraddhaag/1brc/commit/d4153ac7a841170a5ceee47d930e97738b5a19f6)|
 |10|Avoid string concatenation overhead by not reading the decimal point when processing city temperature.|0:24.571|-3.973|[90f2fe1](https://github.com/shraddhaag/1brc/commit/90f2fe121f454f3f1b5cdaeaaebe639bb86d4578)|
 |11|Convert byte slice to string directly instead of using a `strings.Builder`.|0:18.910|-5.761|[88bb6da](https://github.com/shraddhaag/1brc/commit/88bb6da8b85424d46a8c836f3c35a49466df1ea4)|
-|12|Replace `strconv.ParseInt` with a custom `string` to `int` parser.|0:14.008|-4.902||
+|12|Replace `strconv.ParseInt` with a custom `string` to `int` parser.|0:14.008|-4.902|[17d575f](https://github.com/shraddhaag/1brc/commit/17d575fd0f143aed18d285713d030a5b52b478df)|
+|13|Reduce map access calls when constructing final result string.|0:12.017|-1.9991||

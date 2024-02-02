@@ -63,27 +63,36 @@ func main() {
 	}
 }
 
+type computedResult struct {
+	city          string
+	min, max, avg float64
+}
+
 func evaluate(input string) string {
 	mapOfTemp, err := readFileLineByLineIntoAMap(input)
 	if err != nil {
 		panic(err)
 	}
 
-	resultArr := make([]string, len(mapOfTemp))
+	resultArr := make([]computedResult, len(mapOfTemp))
 	var count int
-	for city, _ := range mapOfTemp {
-		resultArr[count] = city
+	for city, calculated := range mapOfTemp {
+		resultArr[count] = computedResult{
+			city: city,
+			min:  round(float64(calculated.min) / 10.0),
+			max:  round(float64(calculated.max) / 10.0),
+			avg:  round(float64(calculated.sum) / 10.0 / float64(calculated.count)),
+		}
 		count++
 	}
 
-	sort.Strings(resultArr)
+	sort.Slice(resultArr, func(i, j int) bool {
+		return resultArr[i].city < resultArr[j].city
+	})
 
 	var stringsBuilder strings.Builder
 	for _, i := range resultArr {
-		stringsBuilder.WriteString(fmt.Sprintf("%s=%.1f/%.1f/%.1f, ", i,
-			round(float64(mapOfTemp[i].min)/10.0),
-			round(float64(mapOfTemp[i].sum)/10.0/float64(mapOfTemp[i].count)),
-			round(float64(mapOfTemp[i].max)/10.0)))
+		stringsBuilder.WriteString(fmt.Sprintf("%s=%.1f/%.1f/%.1f, ", i.city, i.min, i.avg, i.max))
 	}
 	return stringsBuilder.String()[:stringsBuilder.Len()-2]
 }
